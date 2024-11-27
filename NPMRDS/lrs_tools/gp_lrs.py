@@ -127,7 +127,7 @@ def calculate_azimuth(segment, normalized=False):
     return bearing
 
 
-def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshold=10):
+def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshold=15):
     """ This function is similar to get_nearby_routes, but it takes into consideration
         the geometry of the LRS routes.  The input is a segment rather than a point
         and only routes whose nearby segment closely matches the bearing of the input
@@ -139,7 +139,7 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
             distance: Distance in lrs projection's units
             lrs_object: Instance of LRS
             bearing_threshold: The number of degrees that the bearing of the matched
-                route should be in relationo to the bearing of the input segment
+                route should be in relation to the bearing of the input segment
 
         Returns:
             routes: The RTE_NM for the closest route with a closely matching bearing
@@ -150,6 +150,7 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
 
     # Get input segment bearing
     segment_bearing = calculate_azimuth(segment, normalized=True)
+    print(f'segment bearing: {segment_bearing}')
 
     # Find nearest LRS routes
     segBuffer = segment.centroid.buffer(distance)
@@ -161,7 +162,6 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
 
 
     def get_nearest_route_segment(record):
-        print(record)
         route_geom = record.geometry
         ranked_segments = []
         for i in range(len(route_geom.coords) - 1):
@@ -175,12 +175,11 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
         record['bearing'] = route_segment_bearing
         record['bearing_difference'] = abs(segment_bearing - route_segment_bearing)
         record['suitable_match'] = True if abs(segment_bearing - route_segment_bearing) < bearing_threshold else False
-        print(f'get_nearest_route_segment record: {record}')
         return record
 
     
     nearby_routes = nearby_routes.apply(get_nearest_route_segment, axis=1)
-    print(f'nearby_routes: {nearby_routes}')
+    print(f"nearby_routes: \n{nearby_routes[['RTE_NM', 'bearing', 'bearing_difference', 'suitable_match']]}")
     suitable_matches = nearby_routes.loc[nearby_routes['suitable_match'] == True]['RTE_NM'].tolist()
     
     return suitable_matches
@@ -210,23 +209,13 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
 
 
 if __name__ == '__main__':
-    lrs_path = r'C:\Users\daniel.fourquet\Documents\Tasks\TMC Conflation 2025\Data\LRS_MASTER_RICHMOND.shp'
-    lrs = LRS(lrs_path, filter=False)
-    # lrs.geodataframe['geometry'] = shapely.line_merge(lrs.geodataframe.geometry)
-    # lrs.geodataframe = lrs.geodataframe.explode()
-    # lrs.geodataframe.reset_index(inplace=True)
-    # lrs.geodataframe.head(1)[['RTE_NM', 'geometry']].to_clipboard()
-    # print(len(lrs.geodataframe))
-    print('ugghh', '\n' * 8)
-    test_point = Point(185418.89, 74979.19)
-    # # test_point = Point(185956.54383137805, 173669.74369517615)
-    # # test_point = Point(185956.73, 173669.59)
-    results = get_nearby_routes(test_point, 150, lrs)
-    
-    # test_segment = LineString([[180732.34, 75652.74], [180715.58, 75712.97]])  # 64WB
-    # test_segment = LineString([[180416.56, 74055.36], [180402.43, 74070.38]])  # Park Ave
-    # test_segment = LineString([[174946.94913422744, 172621.3780545953], [174956.873458169, 172616.04427231924]])  # Cleveland St
-    # test_segment = LineString([[185418.89, 74979.19], [185423.62, 74996.99]])  # Hartman St
-    # results = get_nearby_route_by_segments(test_segment, 150, lrs)
+    lrs_path = r'C:\Users\danie\Documents\python\tmc-conflation-2025\Data\LRS_MASTER_RICHMOND_SINGLEPART.shp'
+    lrs = LRS(lrs_path, filter=True)
+
+    # test_point = Point(180329.725,174162.631)
+    # results = get_nearby_routes(test_point, 15, lrs)
+
+    test_segment = LineString([[180329.725,174162.631], [180336.454,174172.040]])  # Park Ave
+    results = get_nearby_route_by_segments(test_segment, 15, lrs)
 
     print(results)
