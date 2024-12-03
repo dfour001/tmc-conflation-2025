@@ -3,6 +3,8 @@ import shapefile
 from shapely.geometry import Point, LineString
 import shapely
 import math
+from pyproj import Transformer
+transformer = Transformer.from_crs("EPSG:3968", "EPSG:4326", always_xy=True)
 
 class LRS:
     def __init__(self, lrs_shp_path, filter=False, ramps=2, epsg=3968):
@@ -110,24 +112,35 @@ def calculate_azimuth(segment, normalized=False):
     Returns:
         The azimuth in degrees (clockwise from North)
     """
-    lon1, lat1 = segment.coords[0]
-    lon2, lat2 = segment.coords[1]
 
-    dlon = lon2 - lon1
-    y = math.sin(math.radians(dlon)) * math.cos(math.radians(lat2))
-    x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - \
-        math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(math.radians(dlon))
-    bearing = math.atan2(y, x)
-    bearing = math.degrees(bearing)
-    bearing = (bearing + 360) % 360
+    # Convert to degrees
+    begin_point = transformer.transform(segment.coords[0][0], segment.coords[0][1])
+    end_point = transformer.transform(segment.coords[1][0], segment.coords[1][1])
+    segment = LineString((begin_point, end_point))
 
+    x1, y1 = segment.coords[0]
+    x2, y2 = segment.coords[1]
+
+    def get_bearing(lon1, lat1, lon2, lat2):
+        dlon = lon2 - lon1
+        y = math.sin(math.radians(dlon)) * math.cos(math.radians(lat2))
+        x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - \
+            math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(math.radians(dlon))
+        bearing = math.atan2(y, x)
+        bearing = math.degrees(bearing)
+        bearing = (bearing + 360) % 360
+
+        return bearing
+
+    bearing = get_bearing(x1, y1, x2, y2)
     if normalized:
-        return bearing % 180
+        bearing_reversed = get_bearing(x2, y2, x1, y1)
+        bearing = min(bearing, bearing_reversed)
 
     return bearing
 
 
-def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshold=15):
+def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshold=15, closest_match=True, expanded_buffer=False):
     """ This function is similar to get_nearby_routes, but it takes into consideration
         the geometry of the LRS routes.  The input is a segment rather than a point
         and only routes whose nearby segment closely matches the bearing of the input
@@ -140,6 +153,9 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
             lrs_object: Instance of LRS
             bearing_threshold: The number of degrees that the bearing of the matched
                 route should be in relation to the bearing of the input segment
+            closest_match: If True, returns only the RTE_NM that is the closest
+                to the input segment.  If False, returns all potential RTE_NM matches
+                within the search distance and bearing threshold.
 
         Returns:
             routes: The RTE_NM for the closest route with a closely matching bearing
@@ -150,14 +166,12 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
 
     # Get input segment bearing
     segment_bearing = calculate_azimuth(segment, normalized=True)
-    print(f'segment bearing: {segment_bearing}')
 
     # Find nearest LRS routes
     segBuffer = segment.centroid.buffer(distance)
     possible_routes_index = list(lrs_index.query(segBuffer))
     possible_routes = lrs.iloc[possible_routes_index]
     nearby_routes = possible_routes[possible_routes.intersects(segBuffer)]
-    print(f'len nearby_routes: {len(nearby_routes)}')
     # Locate nearest segment from each of the located routes
 
 
@@ -172,6 +186,9 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
         route_segment_bearing = calculate_azimuth(ranked_segments[0][0], normalized=True)
         record['closest_segment'] = ranked_segments[0][0]
         record['segment_distance'] = ranked_segments[0][1]
+        record['input_segment'] = segment
+        record['segment_bearing'] = segment_bearing
+        record['bearing_raw'] = calculate_azimuth(ranked_segments[0][0], normalized=False)
         record['bearing'] = route_segment_bearing
         record['bearing_difference'] = abs(segment_bearing - route_segment_bearing)
         record['suitable_match'] = True if abs(segment_bearing - route_segment_bearing) < bearing_threshold else False
@@ -179,43 +196,32 @@ def get_nearby_route_by_segments(segment, distance, lrs_object, bearing_threshol
 
     
     nearby_routes = nearby_routes.apply(get_nearest_route_segment, axis=1)
-    print(f"nearby_routes: \n{nearby_routes[['RTE_NM', 'bearing', 'bearing_difference', 'suitable_match']]}")
-    suitable_matches = nearby_routes.loc[nearby_routes['suitable_match'] == True]['RTE_NM'].tolist()
+    nearby_routes.to_clipboard(index=False)
+
+    if len(nearby_routes) == 0:
+        if expanded_buffer == False:
+            return get_nearby_route_by_segments(segment, distance+5, lrs_object, expanded_buffer=True)
+        else:
+            return []
+    
+    suitable_matches = nearby_routes.loc[nearby_routes['suitable_match'] == True]
+
+    # Return only the closest 
+    minimum_distance = suitable_matches['segment_distance'].min()
+    suitable_matches = suitable_matches.loc[suitable_matches['segment_distance'] == minimum_distance]['RTE_NM'].tolist()
+
     
     return suitable_matches
-    # Calculate bearing of nearest segment
-
-    # Compare bearings to input segment
-
-
-
-    # Rank segments based on distance and directionality
-    # ranked_segments = []
-    # for polyline in nearest_polylines.itertuples():
-    #     for i in range(len(polyline.geometry.coords) - 1):
-    #         segment = LineString([polyline.geometry.coords[i], polyline.geometry.coords[i+1]])
-    #         distance = segment.distance(segment.centroid)
-    #         # segment_bearing = azimuth(segment.coords[0], segment.coords[-1])
-    #         # bearing_diff = abs(tmc_bearing - segment_bearing)
-    #         # ranked_segments.append((segment, distance, bearing_diff))
-    #         ranked_segments.append((segment, distance))
-
-    # ranked_segments.sort(key=lambda x: x[1] + x[2])  # Sort by distance and bearing difference
-    # ranked_segments.sort(key=lambda x: x[1])  # Sort by distance
-
-    # return gp.GeoSeries([ranked_segments[0][0]])
-    # return ranked_segments
 
 
 
 if __name__ == '__main__':
-    lrs_path = r'C:\Users\danie\Documents\python\tmc-conflation-2025\Data\LRS_MASTER_RICHMOND_SINGLEPART.shp'
-    lrs = LRS(lrs_path, filter=True)
+    lrs_path = r'C:\Users\daniel.fourquet\Documents\Tasks\TMC Conflation 2025\Data\LRS_MASTER_RICHMOND_SINGLEPART.shp'
+    lrs = LRS(lrs_path, filter=True, ramps=0)
 
     # test_point = Point(180329.725,174162.631)
     # results = get_nearby_routes(test_point, 15, lrs)
-
-    test_segment = LineString([[180329.725,174162.631], [180336.454,174172.040]])  # Park Ave
-    results = get_nearby_route_by_segments(test_segment, 15, lrs)
-
+    test_segment = LineString([[182461.0324050982,177948.7387651351], [182468.95356221838,177950.02564299913]])
+    # test_segment = LineString([[173792.24640480435,178450.13296066664], [173781.07297391788,178726.27261503047]])
+    results = get_nearby_route_by_segments(test_segment, 0, lrs)
     print(results)
