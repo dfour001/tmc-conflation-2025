@@ -13,12 +13,12 @@ import os
 arcpy.env.overwriteOutput = True
 
 # Input LRS paths
-input_master_lrs = r'C:\Users\daniel.fourquet\Documents\ArcGIS\LRS_23.gdb\SDE_VDOT_RTE_MASTER_LRS_DY'
-input_overlap_lrs = r'C:\Users\daniel.fourquet\Documents\ArcGIS\LRS_23.gdb\SDE_VDOT_RTE_OVERLAP_LRS_DY'
+input_master_lrs = r'C:\Users\daniel.fourquet\Documents\ArcGIS\LRS_24.gdb\SDE_VDOT_RTE_MASTER_LRS'
+input_overlap_lrs = r'C:\Users\daniel.fourquet\Documents\ArcGIS\LRS_24.gdb\SDE_VDOT_RTE_OVERLAP_LRS'
 
 output_lrs_path = r'C:\Users\daniel.fourquet\Documents\Tasks\TMC Conflation 2025\Data'
-output_master_lrs_filename = 'master_lrs.shp'  # eg master_lrs.shp
-output_overlap_lrs_filename = 'overlap_lrs.shp'  # eg overlap_lrs.shp
+output_master_lrs_filename = 'master_lrs_24.shp'  # eg master_lrs.shp
+output_overlap_lrs_filename = 'overlap_lrs_24.shp'  # eg overlap_lrs.shp
 
 lrs_versions = [(input_master_lrs, output_master_lrs_filename), (input_overlap_lrs, output_overlap_lrs_filename)]
 
